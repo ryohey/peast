@@ -68,8 +68,18 @@ abstract class ParserAbstract
     protected $eventsEmitter;
 
     /**
+     * Array literals that had a comma after a spread element. Legal in a
+     * literal and an early error once the literal is reinterpreted as a
+     * destructuring pattern, and it leaves no trace in the node tree, so the
+     * parser has to remember it. Keyed by node so the public AST is unchanged.
+     *
+     * @var \SplObjectStorage
+     */
+    protected $commaAfterSpread;
+
+    /**
      * Class constructor
-     * 
+     *
      * @param string   $source   Source code
      * @param Features $features Parser features
      * @param array    $options  Parsing options
@@ -78,7 +88,8 @@ abstract class ParserAbstract
         $source, Features $features, $options = array()
     ) {
         $this->features = $features;
-        
+        $this->commaAfterSpread = new \SplObjectStorage();
+
         $this->sourceType = isset($options["sourceType"]) ?
                             $options["sourceType"] :
                             \Peast\Peast::SOURCE_TYPE_SCRIPT;

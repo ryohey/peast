@@ -233,47 +233,84 @@ class Parser extends ParserAbstract
      * 
      * @return Node\Node
      */
+    protected function assertRestIsLast($elements, $node)
+    {
+        $last = count($elements) - 1;
+        foreach ($elements as $i => $elem) {
+            if (!$elem instanceof Node\RestElement) {
+                continue;
+            }
+            if ($i !== $last) {
+                $this->error(
+                    "Rest element must be last element",
+                    $elem->location->start
+                );
+            }
+            if ($elem->getArgument() instanceof Node\AssignmentPattern) {
+                $this->error(
+                    "Rest element may not have a default",
+                    $elem->location->start
+                );
+            }
+        }
+    }
+
+    /**
+     * Converts an expression node to a pattern node
+     *
+     * @param Node\Node $node The node to convert
+     *
+     * @return Node\Node
+     */
     protected function expressionToPattern($node)
     {
         if ($node instanceof Node\ArrayExpression) {
-            
+
             $loc = $node->location;
             $elems = array();
             foreach ($node->getElements() as $elem) {
                 $elems[] = $this->expressionToPattern($elem);
             }
-                
+            $this->assertRestIsLast($elems, $node);
+            if ($this->commaAfterSpread->offsetExists($node)) {
+                $this->error(
+                    "Rest element may not have a trailing comma",
+                    $node->location->end
+                );
+            }
+
             $retNode = $this->createNode("ArrayPattern", $loc->start);
             $retNode->setElements($elems);
             $this->completeNode($retNode, $loc->end);
-            
+
         } elseif ($node instanceof Node\ObjectExpression) {
-            
+
             $loc = $node->location;
             $props = array();
             foreach ($node->getProperties() as $prop) {
                 $props[] = $this->expressionToPattern($prop);
             }
-                
+            $this->assertRestIsLast($props, $node);
+
             $retNode = $this->createNode("ObjectPattern", $loc->start);
             $retNode->setProperties($props);
             $this->completeNode($retNode, $loc->end);
-            
+
         } elseif ($node instanceof Node\Property) {
-            
+
             $loc = $node->location;
             $retNode = $this->createNode(
                 "AssignmentProperty", $loc->start
             );
-            // If it's a shorthand property convert the value to an assignment
-            // pattern if necessary
             $value = $node->getValue();
             $key = $node->getKey();
-            if ($value && $node->getShorthand() &&
-                !$value instanceof Node\AssignmentExpression &&
-                (!$value instanceof Node\Identifier || (
-                $key instanceof Node\Identifier && $key->getName() !== $value->getName()
-                ))) {
+            // A shorthand property carries its CoverInitializedName
+            // initializer as the value, and is given the key node itself when
+            // there was no initializer. Comparing the two by identity is exact
+            // where inspecting the value's shape is not: the initializer may
+            // itself be an assignment (`{x = y = 1}`) or may name the key
+            // (`{x = x}`), and in both cases the target is still the key.
+            if ($value && $node->getShorthand() && $value !== $key) {
                 $loc = $node->location;
                 $valNode = $this->createNode("AssignmentPattern", $loc->start);
                 $valNode->setLeft($key);
@@ -3659,11 +3696,13 @@ class Parser extends ParserAbstract
         if ($token = $this->scanner->consume("[")) {
             
             $elements = array();
+            $commaAfterSpread = false;
             while (true) {
                 if ($elision = $this->parseElision()) {
                     $elements = array_merge(
                         $elements, array_fill(0, $elision, null)
                     );
+                    $commaAfterSpread = false;
                 }
                 if (($element = $this->parseSpreadElement()) ||
                     ($element = $this->isolateContext(
@@ -3671,20 +3710,32 @@ class Parser extends ParserAbstract
                     ))
                 ) {
                     $elements[] = $element;
+                    $commaAfterSpread = false;
                     if (!$this->scanner->consume(",")) {
                         break;
+                    }
+                    // Legal in an array literal, but not once the literal is
+                    // reinterpreted as a destructuring pattern: an
+                    // AssignmentRestElement takes no trailing comma. Recorded
+                    // here because it leaves no trace in the node tree.
+                    if ($element instanceof Node\SpreadElement) {
+                        $commaAfterSpread = true;
                     }
                 } else {
                     break;
                 }
             }
-            
+
             if ($this->scanner->consume("]")) {
                 $node = $this->createNode("ArrayExpression", $token);
                 $node->setElements($elements);
-                return $this->completeNode($node);
+                $this->completeNode($node);
+                if ($commaAfterSpread) {
+                    $this->commaAfterSpread->offsetSet($node, true);
+                }
+                return $node;
             }
-            
+
             $this->error();
         }
         return null;
