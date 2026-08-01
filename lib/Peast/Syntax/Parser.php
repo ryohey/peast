@@ -1490,17 +1490,23 @@ class Parser extends ParserAbstract
     
     /**
      * Parses function or generator declaration
-     * 
+     *
      * @param bool $default        Default mode
-     * @param bool $allowGenerator True to allow parsing of generators
-     * 
+     * @param bool $allowGenerator True to allow parsing of generators and
+     *                             async functions (every caller that passes
+     *                             false wants a plain function declaration
+     *                             only: the labelled-statement and
+     *                             Annex B.3.4 if-statement-body positions,
+     *                             none of which admit a GeneratorDeclaration
+     *                             or an AsyncFunctionDeclaration)
+     *
      * @return Node\FunctionDeclaration|null
      */
     protected function parseFunctionOrGeneratorDeclaration(
         $default = false, $allowGenerator = true
     ) {
         $async = null;
-        if ($this->features->asyncAwait &&
+        if ($allowGenerator && $this->features->asyncAwait &&
             ($async = $this->checkAsyncFunctionStart())) {
             $this->scanner->consumeToken();
             if (!$this->features->asyncIterationGenerators) {
