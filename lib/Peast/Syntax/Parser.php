@@ -3961,11 +3961,24 @@ class Parser extends ParserAbstract
             break;
         }
         
-        //Exclude keywords that depend on parser context
+        //Exclude keywords that depend on parser context. The check has to
+        //run against the identifier's decoded value, not its raw source
+        //text: an escaped "yield" is the identifier "yield" and must
+        //be excluded the same as an unescaped one would be, wherever the
+        //current context flag says "yield" is not a legal identifier here.
         $value = $token->value;
+        $checkValue = strpos($value, "\\") !== false
+            ? preg_replace_callback(
+                "#\\\\u(?:\{([a-fA-F0-9]+)\}|([a-fA-F0-9]{4}))#",
+                function ($match) {
+                    return Utils::unicodeToUtf8(hexdec($match[1] ?: $match[2]));
+                },
+                $value
+            )
+            : $value;
         if ($mode === self::ID_MIXED &&
-            isset($this->contextKeywords[$value]) &&
-            $this->context->{$this->contextKeywords[$value]}
+            isset($this->contextKeywords[$checkValue]) &&
+            $this->context->{$this->contextKeywords[$checkValue]}
         ) {
             return null;
         }
