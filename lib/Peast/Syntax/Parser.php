@@ -2822,7 +2822,9 @@ class Parser extends ParserAbstract
                     $this->scanner->consume("}")
                 ) {
 
-                    if ($prop[0] instanceof Node\Identifier &&
+                    if ($kind === Node\MethodDefinition::KIND_METHOD &&
+                        !$generator && !$async &&
+                        $prop[0] instanceof Node\Identifier &&
                         $prop[0]->getName() === "constructor"
                     ) {
                         $kind = Node\MethodDefinition::KIND_CONSTRUCTOR;
